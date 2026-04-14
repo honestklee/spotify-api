@@ -44,10 +44,20 @@ export default async function handler(req, res) {
     const song = await nowPlayingRes.json();
 
     // Pastikan item ada
-    if (!song.item) {
-      return res.send(await renderEmptyState());
-    }
+   if (!song || !song.item) {
+    const canvas = createCanvas(500, 150); // Samakan ukurannya
+    const ctx = canvas.getContext("2d");
 
+    ctx.fillStyle = "#121212";
+    ctx.fillRect(0, 0, 500, 150);
+
+    ctx.fillStyle = "#b3b3b3";
+    ctx.font = "italic 16px sans-serif";
+    ctx.fillText("Sedang tidak mendengarkan apa pun... 😴", 130, 80);
+
+    res.setHeader("Content-Type", "image/png");
+    return res.send(canvas.toBuffer("image/png"));
+  }
     // 5. Render Canvas untuk lagu yang sedang diputar
     const title = song.item.name;
     const artist = song.item.artists.map((a) => a.name).join(", ");
