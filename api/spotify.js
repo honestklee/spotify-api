@@ -1,3 +1,5 @@
+import { createCanvas, loadImage } from "@napi-rs/canvas";
+
 const TOKEN_ENDPOINT = "https://accounts.spotify.com/api/token";
 const NOW_PLAYING_ENDPOINT = "https://api.spotify.com/v1/me/player/currently-playing";
 
@@ -6,7 +8,7 @@ const basic = Buffer.from(
 ).toString("base64");
 
 export default async function handler(req, res) {
-  // 1. Get access token
+  // ambil token
   const tokenRes = await fetch(TOKEN_ENDPOINT, {
     method: "POST",
     headers: {
@@ -21,7 +23,7 @@ export default async function handler(req, res) {
 
   const { access_token } = await tokenRes.json();
 
-  // 2. Get current playing
+  // ambil lagu
   const nowPlayingRes = await fetch(NOW_PLAYING_ENDPOINT, {
     headers: {
       Authorization: `Bearer ${access_token}`,
@@ -30,31 +32,47 @@ export default async function handler(req, res) {
 
   const song = await nowPlayingRes.json();
 
-  // 3. Kalau tidak ada lagu
+  // kalau tidak ada lagu
   if (!song || !song.item) {
-    return res.status(200).send("No song playing");
+    res.setHeader("Content-Type", "image/png");
+
+    const canvas = createCanvas(400, 100);
+    const ctx = canvas.getContext("2d");
+
+    ctx.fillStyle = "#121212";
+    ctx.fillRect(0, 0, 400, 100);
+
+    ctx.fillStyle = "#ffffff";
+    ctx.font = "16px sans-serif";
+    ctx.fillText("No song playing 🎧", 20, 50);
+
+    return res.send(canvas.toBuffer("image/png"));
   }
 
   const title = song.item.name;
   const artist = song.item.artists.map(a => a.name).join(", ");
   const albumImage = song.item.album.images[0].url;
 
-  // 4. Ambil image album
-  const imageRes = await fetch(albumImage);
-  const imageBuffer = await imageRes.arrayBuffer();
+  const canvas = createCanvas(500, 150);
+  const ctx = canvas.getContext("2d");
 
-  // 5. Return HTML (biar tampil di README)
-  res.setHeader("Content-Type", "text/html");
+  // background
+  ctx.fillStyle = "#121212";
+  ctx.fillRect(0, 0, 500, 150);
 
-  return res.send(`
-    <div style="display:flex;align-items:center;background:#121212;color:white;padding:10px;border-radius:10px;width:400px;">
-      <img src="${albumImage}" style="width:80px;height:80px;border-radius:8px;margin-right:10px;" />
-      <div>
-        <div style="font-weight:bold;">${title}</div>
-        <div style="font-size:12px;color:#b3b3b3;">${artist}</div>
-      </div>
-    </div>
-  `);
+  // load cover
+  const img = await loadImage(albumImage);
+  ctx.drawImage(img, 10, 10, 130, 130);
+
+  // text
+  ctx.fillStyle = "#ffffff";
+  ctx.font = "bold 18px sans-serif";
+  ctx.fillText(title.substring(0, 30), 160, 60);
+
+  ctx.fillStyle = "#b3b3b3";
+  ctx.font = "14px sans-serif";
+  ctx.fillText(artist.substring(0, 40), 160, 90);
+
+  res.setHeader("Content-Type", "image/png");
+  return res.send(canvas.toBuffer("image/png"));
 }
-
-//test
