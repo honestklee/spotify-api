@@ -1,6 +1,6 @@
-import { createCanvas, loadImage, GlobalFonts } from "@napi-rs/canvas";
+import { createCanvas, loadImage } from "@napi-rs/canvas";
 
-// 1. Gunakan Endpoint RESMI Spotify
+// GUNAKAN ENDPOINT RESMI SPOTIFY
 const TOKEN_ENDPOINT = "https://accounts.spotify.com/api/token";
 const NOW_PLAYING_ENDPOINT = "https://api.spotify.com/v1/me/player/currently-playing";
 
@@ -10,7 +10,7 @@ const basic = Buffer.from(
 
 export default async function handler(req, res) {
   try {
-    // 2. Ambil Access Token menggunakan Refresh Token
+    // 1. Ambil Access Token
     const tokenRes = await fetch(TOKEN_ENDPOINT, {
       method: "POST",
       headers: {
@@ -23,98 +23,79 @@ export default async function handler(req, res) {
       }),
     });
 
-    const { access_token } = await tokenRes.json();
+    const tokenData = await tokenRes.json();
 
-    // 3. Ambil data lagu yang sedang diputar
+    if (!tokenData.access_token) {
+      return renderError(res, "Invalid Refresh Token/Env");
+    }
+
+    // 2. Ambil Lagu
     const nowPlayingRes = await fetch(NOW_PLAYING_ENDPOINT, {
       headers: {
-        Authorization: `Bearer ${access_token}`,
+        Authorization: `Bearer ${tokenData.access_token}`,
       },
     });
 
-    // Header untuk menghindari cache berlebihan di GitHub (Update tiap 1 menit)
+    // Header agar GitHub tidak nge-cache gambar terlalu lama
     res.setHeader("Content-Type", "image/png");
     res.setHeader("Cache-Control", "public, s-maxage=60, stale-while-revalidate=30");
 
-    // 4. Jika Spotify mati atau tidak ada lagu (Status 204)
+    // 3. Kondisi jika tidak ada lagu (Status 204 atau item kosong)
     if (nowPlayingRes.status === 204 || nowPlayingRes.status > 400) {
-      return res.send(await renderEmptyState());
+      return renderError(res, "Spotify is Idle 😴", "#b3b3b3");
     }
 
     const song = await nowPlayingRes.json();
+    if (!song.item) {
+      return renderError(res, "Nothing playing", "#b3b3b3");
+    }
 
-    // Pastikan item ada
-   if (!song || !song.item) {
-    const canvas = createCanvas(500, 150); // Samakan ukurannya
-    const ctx = canvas.getContext("2d");
-
-    ctx.fillStyle = "#121212";
-    ctx.fillRect(0, 0, 500, 150);
-
-    ctx.fillStyle = "#b3b3b3";
-    ctx.font = "italic 16px sans-serif";
-    ctx.fillText("Sedang tidak mendengarkan apa pun... 😴", 130, 80);
-
-    res.setHeader("Content-Type", "image/png");
-    return res.send(canvas.toBuffer("image/png"));
-  }
-    // 5. Render Canvas untuk lagu yang sedang diputar
+    // 4. Render Lagu
     const title = song.item.name;
-    const artist = song.item.artists.map((a) => a.name).join(", ");
+    const artist = song.item.artists.map(a => a.name).join(", ");
     const albumImage = song.item.album.images[0].url;
 
     const canvas = createCanvas(500, 150);
     const ctx = canvas.getContext("2d");
 
-    // Background Gelap ala Spotify
+    // Background
     ctx.fillStyle = "#121212";
-    ctx.roundRect(0, 0, 500, 150, 10); // Membuat sudut sedikit melengkung
-    ctx.fill();
+    ctx.fillRect(0, 0, 500, 150);
 
-    // Load & Draw Cover Album
+    // Cover Album
     const img = await loadImage(albumImage);
-    ctx.save();
-    // Membuat cover album sedikit rounded
-    ctx.beginPath();
-    ctx.roundRect(10, 10, 130, 130, 5);
-    ctx.clip();
     ctx.drawImage(img, 10, 10, 130, 130);
-    ctx.restore();
 
     // Text Title
     ctx.fillStyle = "#ffffff";
     ctx.font = "bold 18px sans-serif";
-    ctx.fillText(title.substring(0, 35), 160, 60);
+    ctx.fillText(title.substring(0, 30), 160, 60);
 
     // Text Artist
     ctx.fillStyle = "#b3b3b3";
     ctx.font = "14px sans-serif";
-    ctx.fillText(artist.substring(0, 45), 160, 90);
-    
-    // Indikator "Currently Playing"
-    ctx.fillStyle = "#1DB954"; // Hijau Spotify
-    ctx.font = "12px sans-serif";
-    ctx.fillText("ON SPOTIFY 🎧", 160, 120);
+    ctx.fillText(artist.substring(0, 40), 160, 90);
+
+    // Spotify Logo/Label
+    ctx.fillStyle = "#1DB954";
+    ctx.font = "bold 12px sans-serif";
+    ctx.fillText("LISTENING ON SPOTIFY", 160, 125);
 
     return res.send(canvas.toBuffer("image/png"));
 
-  } catch (error) {
-    console.error(error);
-    return res.send(await renderEmptyState("Error loading Spotify"));
+  } catch (e) {
+    return renderError(res, "Server Error: " + e.message);
   }
 }
 
-// Fungsi untuk merender tampilan saat tidak ada lagu
-async function renderEmptyState(message = "Not playing anything") {
-  const canvas = createCanvas(400, 100);
+// Fungsi pembantu untuk menampilkan pesan di gambar jika ada masalah
+async function renderError(res, message, color = "#FF5555") {
+  const canvas = createCanvas(500, 100);
   const ctx = canvas.getContext("2d");
-
   ctx.fillStyle = "#121212";
-  ctx.fillRect(0, 0, 400, 100);
-
-  ctx.fillStyle = "#b3b3b3";
+  ctx.fillRect(0, 0, 500, 100);
+  ctx.fillStyle = color;
   ctx.font = "16px sans-serif";
   ctx.fillText(message, 20, 55);
-
-  return canvas.toBuffer("image/png");
+  return res.send(canvas.toBuffer("image/png"));
 }
